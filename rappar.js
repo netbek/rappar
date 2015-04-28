@@ -318,7 +318,8 @@ function rappar(svg) {
         idtops = {},
         text,
         textel,
-        grad;
+        grad,
+        viewBox = null;
     
     function factory(tag, type) {
         return function (data, attr) {
@@ -391,6 +392,73 @@ function rappar(svg) {
             this[name] = aa[name] ? value : parseFloat(value);
         }
     });
+
+    function parseViewboxValue (value) {
+        value = value.toString().trim();
+
+        if (value.indexOf('%') > -1) {
+            return null;
+        }
+
+        var matches = value.match(/^(\-?[0-9]+)(\s*px)?$/i);
+
+        if (matches === null) {
+            return null;
+        }
+
+        return parseInt(matches[1]);
+    }
+
+    eve.on('elemental.tag.svg', function (data, attr, raw) {
+        var parsed = {
+            x: 0,
+            y: 0,
+            width: 0,
+            height: 0
+        };
+
+        // Parse viewBox attribute
+        if (typeof attr.viewBox !== 'undefined') {
+            var delimiter = attr.viewBox.trim().indexOf(',') > -1 ? ',' : ' ';
+            var parts = attr.viewBox.trim().split(delimiter);
+
+            if (parts.length === 4) {
+                parsed.x = parseViewboxValue(parts[0]);
+                parsed.y = parseViewboxValue(parts[1]);
+                parsed.width = parseViewboxValue(parts[2]);
+                parsed.height = parseViewboxValue(parts[3]);
+            }
+
+            // If all parsed values are valid
+            if (Object.keys(parsed).every(function (key) {
+                return parsed[key] !== null;
+            })) {
+                viewBox = parsed;
+                return;
+            }
+        }
+
+        // Parse x, y, width and height attributes
+        var attrs = ['x', 'y', 'width', 'height'];
+
+        if (typeof attr.width !== 'undefined' && typeof attr.height !== 'undefined') {
+            parsed.width = parseViewboxValue(attr.width);
+            parsed.height = parseViewboxValue(attr.height);
+
+            if (typeof attr.x !== 'undefined' && typeof attr.y !== 'undefined') {
+                parsed.x = parseViewboxValue(attr.x);
+                parsed.y = parseViewboxValue(attr.y);
+            }
+
+            // If all parsed values are valid
+            if (Object.keys(parsed).every(function (key) {
+                return parsed[key] !== null;
+            })) {
+                viewBox = parsed;
+            }
+        }
+    });
+
     eve.on("elemental.tag.circle", factory("circle"));
     eve.on("elemental.tag.ellipse", factory("ellipse"));
     eve.on("elemental.tag.polygon", factory("polygon", "path"));
@@ -482,7 +550,21 @@ function rappar(svg) {
     });
     parser(svg);
     parser.end();
-    return items;
+
+    var obj = {
+        x: null,
+        y: null,
+        w: null,
+        h: null,
+        d: items
+    };
+    if (viewBox !== null) {
+        obj.x = viewBox.x;
+        obj.y = viewBox.y;
+        obj.w = viewBox.width;
+        obj.h = viewBox.height;
+    }
+    return obj;
 }
 
 function parseTransform(t) {
@@ -537,5 +619,7 @@ function applyStyle(css, el, aa) {
 var files = process.argv.slice(0);
 if (files.length > 2) {
     var svg = fs.readFileSync(files[2], "utf-8");
-    console.log(JSON.stringify(rappar(svg)));
+    var prepend = files.length > 3 ? files[3] : '';
+    var append = files.length > 4 ? files[4] : '';
+    console.log(prepend + JSON.stringify(rappar(svg)) + append);
 }
